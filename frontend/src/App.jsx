@@ -1,5 +1,6 @@
 import './App.css'
 import { useState, useEffect, useRef } from "react";
+// import { auth, db } from './services/firebase.js';
 
 // Components
 import Icon from './components/Icon.jsx';
@@ -12,12 +13,33 @@ import Sensors from './pages/Sensors.jsx';
 import EventLog from './pages/EventLog.jsx';
 import Settings from './pages/Settings.jsx';
 import Contacts from './pages/Contacts.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
 
 // Data
 import ICONS from './data/constants.jsx';
 
+// Hooks
+import useAuth from './hooks/useAuth.js';
+
+// Services
+import { logOutUser } from './services/authService.js';
+import { createSOSEvent } from './services/sosService.js';
+import { getCurrentLocation } from './services/locationService.js';
+import { saveSOSOffline, syncUnsyncedSOS } from './services/offlineService.js';
+
+
+// Assets
+import background from "./assets/background.jpg";
+
 
 function App() {
+
+  // console.log("Firebase Auth:", auth);
+  // console.log("Firebase Firestore:", db);
+
+  const { user, loading } = useAuth();
+  const [showRegister, setShowRegister] = useState(false);
 
 
 // ── Main App ──────────────────────────────────────────────────────────────────
@@ -56,16 +78,145 @@ function App() {
     if (sosHold > 0 && sosHold < 100) {
       holdRef.current = setTimeout(() => setSosHold(h => h + 10), 80);
     } else if (sosHold >= 100) {
-      setSosActive(true);
+      // setSosActive(true);
+      triggerSOS();
       setSosHold(0);
-      setAlerts(a => [{ type: "danger", msg: "SOS broadcast initiated. Mesh relay active.", time: new Date().toLocaleTimeString(), status: "ACTIVE" }, ...a]);
+      // setAlerts(a => [{ type: "danger", msg: "SOS broadcast initiated. Mesh relay active.", time: new Date().toLocaleTimeString(), status: "ACTIVE" }, ...a]);
     }
     return () => clearTimeout(holdRef.current);
   }, [sosHold]);
 
+  // Automatically sync unsynced SOS events when online
+  useEffect(() => {
+    const handleOnline = async () => {
+      console.log("🌐 Network connection restored. Attempting to sync unsynced SOS events...");
+      
+      if(!user){
+        console.error("User not authenticated. Cannot sync unsynced SOS events.");
+        return;
+      }
+      try {
+      await syncUnsyncedSOS(createSOSEvent);
+
+      setAlerts(prev => [
+        { type: "info", msg: "Unsynced SOS events synced successfully.", time: new Date().toLocaleTimeString(), status: "SYNCED" },
+        ...prev
+      ]);
+      } catch (error) {
+        console.error("Error syncing unsynced SOS events:", error);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [user]);
+
+  // Startup UseEffect to sync unsynced SOS events if online
+  useEffect(() => {
+    if(!user) return;
+    const syncOnStartup = async () => {
+      if (!navigator.onLine && user) {
+        console.log("🌐 App started offline. Waiting for network connection...");
+        return;
+      }
+      try{
+        console.log("🌐 App started online. Attempting to sync unsynced SOS events...");
+        await syncUnsyncedSOS(createSOSEvent);
+      } catch (error) {
+        console.error("Error syncing unsynced SOS events on startup:", error);
+      }
+    };
+
+    syncOnStartup();
+  }, [user]);
+
   const cancelSOS = () => {
     setSosActive(false);
     setAlerts(a => [{ type: "info", msg: "SOS cancelled by user.", time: new Date().toLocaleTimeString(), status: "CANCELLED" }, ...a]);
+  };
+
+  const triggerSOS = async () => {
+    if (!user) return;
+
+    try{
+      console.log("🚨 SOS ACTIVATED");
+
+      // Get current location
+      const location = await getCurrentLocation();
+      console.log("📍 Location:", location);
+
+      const sosData = {
+        userId: user.uid,
+        type: "MANUAL",
+        source: "USER",
+        latitude: location.latitude,
+        longitude: location.longitude,
+        ttl,
+        status: "ACTIVE"
+      };
+
+      // ONLINE: Save SOS to Firestore
+
+      if (navigator.onLine) {
+        console.log("🌐 Online: Saving SOS to Firestore");
+        const sosEvent = await createSOSEvent(sosData);
+        console.log("✅ SOS Event Created:", sosEvent.id);
+
+        setAlerts(prev => [
+          { type: "danger", msg: `SOS Activated. Location ${location.available ? "attached" : "unavailable"}.`, time: new Date().toLocaleTimeString(), status: "SENT" },
+          ...prev
+        ]);
+
+      } else {
+        // OFFLINE: Save SOS to IndexedDB
+        console.log("📴 Offline: Saving SOS to IndexedDB");
+        const localId = await saveSOSOffline(sosData);
+        console.log("💾 SOS Saved Locally with ID:", localId);
+        
+        setAlerts(prev => [
+          { type: "warn", msg: `SOS Activated offline. Waiting for network connection. Will sync when online.`, time: new Date().toLocaleTimeString(), status: "QUEUED" },
+          ...prev
+        ]);
+      }
+
+      // // Create SOS event in Firestore
+      // const sosEvent = await createSOSEvent({
+      //   userId: user.uid,
+      //   type: "MANUAL",
+      //   source: "USER",
+      //   latitude: location.latitude,
+      //   longitude: location.longitude,
+      //   ttl
+      // });
+
+      // // Check whether location is available
+      // const locationMsg = location.available
+      //   ? "Location attached"
+      //   : "Location unavailable";
+      // setAlerts((prev) => [
+      //   { type: "danger", msg: `SOS Activated. ${locationMsg}`, time: new Date().toLocaleTimeString(), status: "SENT" },
+      //   ...prev
+      // ]);
+
+      setSosActive(true);
+
+      // console.log("SOS Event Created:", sosEvent.id);
+      
+    } catch (error) {
+      console.error("Error creating SOS event:", error);
+      setAlerts(prev => [
+      {
+        type: "danger",
+        msg: "Failed to create SOS event.",
+        time: new Date().toLocaleTimeString(),
+        status: "FAILED"
+      },
+      ...prev
+    ]);
+    }
   };
 
   const tabs = [
@@ -84,14 +235,28 @@ function App() {
     { name: "Unknown_4F2A", distance: "91m", relay: false, signal: 1, avatar: "??" },
   ];
 
-  const contacts = [
-    { name: "Contact 1", relation: "Friend", phone: "+91 98450 XXXXX" },
-    { name: "Contact 2", relation: "Guardian", phone: "+91 98440 XXXXX" },
-    { name: "Emergency SOS", relation: "Campus Security", phone: "080-2323-XXXX" }
-  ];
+  // const contacts = [
+  //   { name: "Contact 1", relation: "Friend", phone: "+91 98450 XXXXX" },
+  //   { name: "Contact 2", relation: "Guardian", phone: "+91 98440 XXXXX" },
+  //   { name: "Emergency SOS", relation: "Campus Security", phone: "080-2323-XXXX" }
+  // ];
+
+  // Authentication check
+  if (loading) {
+    return <div className="text-center text-zinc-500">Loading...</div>;
+  }
+
+  if (!user) {
+    return showRegister ? (
+      <Register onLogin={() => setShowRegister(false)} />
+    ) : (
+      <Login onRegister={() => setShowRegister(true)} />
+    );
+  }
 
   return (
     <>
+    <div className="min-h-screen bg-cover bg-center" style={{backgroundImage: `url(${background})`}}>
     <div className="min-h-screen bg-zinc-950 text-zinc-200 font-mono flex flex-col" style={{fontFamily: "'JetBrains Mono', 'Fira Code', monospace"}}>
 
       {/* Top Bar */}
@@ -103,6 +268,9 @@ function App() {
           <span className="text-sm font-bold text-zinc-200 tracking-tight">MESH<span className="text-red-400">SOS</span></span>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={logOutUser} className="text-xs text-zinc-400 border border-zinc-800 px-3 py-1 rounded-lg hover:bg-zinc-900/40 transition-colors">
+            Logout
+          </button>
           <StatusDot active={meshActive} label="BLE" />
           <StatusDot active={sosActive} label={sosActive ? "SOS ACTIVE" : "STANDBY"} />
           <span className="text-xs text-zinc-600 font-mono">{Math.round(battery)}%</span>
@@ -128,6 +296,7 @@ function App() {
         {/* DASHBOARD TAB */}
         {tab === "dashboard" && (
           <Dashboard
+            user={user}
             sosActive={sosActive}
             sosHold={sosHold}
             setSosHold={setSosHold}
@@ -165,7 +334,8 @@ function App() {
         {/* CONTACTS TAB */}
         {tab === "contacts" && (
           <Contacts
-            contacts={contacts}
+            user={user}
+            sosActive={sosActive}
           />
         )}
 
@@ -198,7 +368,9 @@ function App() {
         ))}
       </div>
     </div>
+    </div>
     </>
+
   );
 }
 

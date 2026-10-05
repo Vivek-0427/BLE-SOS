@@ -3,7 +3,7 @@ import AlertItem from "../components/AlertItem"
 import Icon from "../components/Icon"
 import ICONS from "../data/constants"
 
-export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, peerCount, ttl, accel, gyro, alerts }) {
+export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, peerCount, ttl, accel, gyro, alerts, user }) {
     return (
         <>
         {/* SOS Button */}

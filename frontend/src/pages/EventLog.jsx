@@ -1,4 +1,5 @@
 import AlertItem from "../components/AlertItem";
+import {getUserSOSEvents} from "../services/sosService";
 import Icon from "../components/Icon";
 import ICONS from "../data/constants";
 

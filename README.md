@@ -1,17 +1,25 @@
-# SOS Relay Network
+Decentralized Bluetooth mesh SOS 
 
-A decentralized emergency communication system that works without internet using device-to-device relay.
+// Frontend - React
 
-## Features
+1. Vite React -     npm create vite@latest my-app
+                    cd my-app
+                    npm install
+                    npm run dev
+                    npm install lucide-react
+                    
+2. Tailwind Css -   cd frontend
+                    npm install tailwindcss @tailwindcss/vite
+                    vite.config.js - import tailwindcss from '@tailwindcss/vite'
+                    src/index.css - @import "tailwindcss";
 
-- Bluetooth-based peer discovery
-- Store-and-forward SOS messaging
-- Duplicate detection
-- Internet gateway fallback
 
-## Architecture
 
-Device → Relay nodes → Internet gateway → Server
 
-# npm create vite@latest frontend -- --template react
-# npm install tailwindcss @tailwindcss/vite
+// FireBase - Firestore, Firebase Auth, Firebase Storage
+
+1. Set up a Firebase project and enable Firestore, Firebase Auth, and Firebase Storage.
+
+2. Install Firebase SDK in your React application. - { npm install firebase }.
+
+3. To check the installed version of Firebase SDK - { npm list firebase }.

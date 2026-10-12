@@ -23,5 +23,10 @@ const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const auth = getAuth(app);
 const db = getFirestore(app);
+import { connectFirestoreEmulator } from "firebase/firestore";
+
+if (import.meta.env.DEV) {
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+}
 
 export { auth, db, analytics };

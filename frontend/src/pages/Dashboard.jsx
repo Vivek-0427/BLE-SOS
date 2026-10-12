@@ -3,7 +3,7 @@ import AlertItem from "../components/AlertItem"
 import Icon from "../components/Icon"
 import ICONS from "../data/constants"
 
-export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, peerCount, ttl, accel, gyro, alerts, user }) {
+export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, peerCount, accel, gyro, alerts, persistentEvents }) {
     return (
         <>
         {/* SOS Button */}
@@ -36,18 +36,14 @@ export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, p
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center">
                 <p className="text-[10px] text-zinc-600 mb-1">PEERS</p>
                 <p className="text-xl font-bold text-cyan-400">{peerCount}</p>
               </div>
               <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center">
-                <p className="text-[10px] text-zinc-600 mb-1">TTL HOP</p>
-                <p className="text-xl font-bold text-violet-400">{ttl}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center">
                 <p className="text-[10px] text-zinc-600 mb-1">RANGE</p>
-                <p className="text-xl font-bold text-emerald-400">~{peerCount * 30}m</p>
+                <p className="text-xl font-bold text-emerald-400">~100m</p>
               </div>
             </div>
 
@@ -57,11 +53,55 @@ export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, p
               <SensorGauge label="Gyro" value={+gyro.toFixed(0)} max={180} unit="°/s" color="amber" />
             </div>
 
-            {/* Recent Alerts */}
+            {/* Recent Events */}
             <div>
-              <p className="text-[10px] text-zinc-600 mb-2 tracking-widest uppercase">Recent Events</p>
+              <p className="text-[10px] text-zinc-600 mb-2 tracking-widest uppercase">
+                Recent Events
+              </p>
+
               <div className="space-y-2">
-                {alerts.slice(0, 3).map((a, i) => <AlertItem key={i} {...a} />)}
+
+                {[
+                  ...(persistentEvents || []).map((event) => ({
+                    ...event,
+                    _time: event.timestamp
+                      ? new Date(event.timestamp).getTime()
+                      : event.createdAt?.toMillis?.() || 0,
+
+                    type: "danger",
+
+                    msg:
+                      event.type === "FALL"
+                        ? "Automatic Fall SOS"
+                        : "Emergency SOS Activated",
+
+                    time: event.timestamp
+                      ? new Date(event.timestamp).toLocaleTimeString()
+                      : event.createdAt?.toDate
+                        ? event.createdAt.toDate().toLocaleTimeString()
+                        : "Unknown time",
+
+                    status: event.status || "ACTIVE"
+                  })),
+
+                  ...(alerts || []).map((alert) => ({
+                    ...alert,
+                    _time: alert.timestamp
+                      ? new Date(alert.timestamp).getTime()
+                      : alert.time
+                        ? new Date(alert.time).getTime()
+                        : Date.now()
+                  }))
+                ]
+                  .sort((a, b) => b._time - a._time)
+                  .slice(0, 3)
+                  .map((event, index) => (
+                    <AlertItem
+                      key={event.id || `recent-${index}`}
+                      {...event}
+                    />
+                  ))}
+
               </div>
             </div>
         </>

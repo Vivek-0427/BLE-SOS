@@ -487,7 +487,7 @@ export default function Contacts({ user, sosActive }) {
             "SOS triggered on device",
             "Emergency network propagation",
             "Relay via internet-connected peer",
-            "SMS + Push to emergency contacts",
+            "Nearby User's get notified + Push to emergency contacts",
             "Dashboard notification logged"
           ].map((step, i) => (
 

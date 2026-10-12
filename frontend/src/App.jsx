@@ -24,10 +24,13 @@ import useAuth from './hooks/useAuth.js';
 
 // Services
 import { logOutUser } from './services/authService.js';
-import { createSOSEvent } from './services/sosService.js';
+import { createSOSEvent, getUserSOSEvents, cancelSOSEvent } from './services/sosService.js';
 import { getCurrentLocation } from './services/locationService.js';
 import { saveSOSOffline, syncUnsyncedSOS } from './services/offlineService.js';
-
+import { startMotionSensors } from './services/sensorsService.js';
+import { generateMeshPeers } from "./services/meshSimulationService";
+import { updateUserLocation, startLocationTracking, stopLocationTracking } from './services/nearbyService.js';
+import { listenForNearbySOS } from "./services/nearbyService";
 
 // Assets
 import background from "./assets/background.jpg";
@@ -40,48 +43,204 @@ function App() {
 
   const { user, loading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
-
+  const [peers, setPeers] = useState([]);
 
 // ── Main App ──────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("dashboard");
   const [sosActive, setSosActive] = useState(false);
   const [sosHold, setSosHold] = useState(0);
   const [meshActive, setMeshActive] = useState(true);
+  const [locationSharing, setLocationSharing] = useState(true);
   const [fallDetect, setFallDetect] = useState(true);
   const [audioDetect, setAudioDetect] = useState(false);
-  const [ttl, setTtl] = useState(5);
+  const [persistentEvents, setPersistentEvents] = useState([]);
+  const [nearbyNotifications, setNearbyNotifications] = useState([]);
+  const [notificationError, setNotificationError] = useState("");
+  const [activeSosId, setActiveSosId] = useState(null);
+  const [impact, setimpact] = useState(false);
 
   const [alerts, setAlerts] = useState([
-    { type: "info", msg: "Mesh network initialized. 4 peers discovered.", time: "14:32:01", status: "OK" },
-    { type: "warn", msg: "Sudden acceleration detected. Manual confirm skipped.", time: "14:28:44", status: "WATCH" },
-    { type: "danger", msg: "SOS broadcast sent. TTL=5. Relay via Node A.", time: "14:22:10", status: "SENT" },
-  ]);
+    { type: "info", msg: "Mesh network initialized. Peers discovered.", time: "09:32:01", status: "OK" },
+    { type: "warn", msg: "Sudden acceleration detected. Manual confirm skipped.", time: "14:28:44", status: "WATCH" },  ]);
 
   const holdRef = useRef(null);
-  const [accel, setAccel] = useState(2.1);
-  const [gyro, setGyro] = useState(34);
-  const [battery, setBattery] = useState(78);
+  const [accel, setAccel] = useState(0);
+  const [gyro, setGyro] = useState(0);
+  const [fallDetected, setFallDetected] = useState(false);
+  const [fallCountdown, setFallCountdown] = useState(10);
+  const [fallWarning, setFallWarning] = useState(false);
+  const [sensorAvailable, setSensorAvailable] = useState(false);
   const [peerCount, setPeerCount] = useState(4);
 
-  // Simulate sensor fluctuation
+  // Start location tracking when user is logged in
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAccel(v => +(v + (Math.random() - 0.5) * 0.4).toFixed(1));
-      setGyro(v => Math.max(0, Math.min(180, +(v + (Math.random() - 0.5) * 5).toFixed(1))));
-      setBattery(v => Math.max(10, v - 0.05));
-    }, 1200);
-    return () => clearInterval(interval);
+  if (!user) return;
+
+  console.log("📍 Starting nearby-user location service");
+
+  const watchId = startLocationTracking(user.uid, locationSharing);
+
+  return () => {
+    console.log("🛑 Stopping nearby-user location service");
+    stopLocationTracking(watchId);
+  };
+
+}, [user, locationSharing]);
+
+  // Generate mesh peers on app initialization
+  useEffect(() => {
+    const initialPeers = generateMeshPeers();
+
+     console.log("Initial mesh peers generated:", initialPeers);
+
+     setPeers(initialPeers);
   }, []);
+
+  useEffect(() => {
+  if (!meshActive) return;
+
+  const interval = setInterval(() => {
+
+    setPeers(prev =>
+      prev.map(peer => ({
+        ...peer,
+        signal: Math.max(
+          1,
+          Math.min(
+            4,
+            peer.signal + Math.floor(Math.random() * 3 - 1)
+          )
+        )
+      }))
+    );
+
+  }, 3000);
+
+  return () => clearInterval(interval);
+}, [meshActive]);
+
+  // Load Events from Firestore on user login
+
+  useEffect(() => {
+  if (!user) return;
+
+  const loadEvents = async () => {
+    try {
+      console.log("📋 Loading SOS event history...");
+
+      const events = await getUserSOSEvents(user.uid);
+
+      setPersistentEvents(events);
+
+      console.log(
+        `✅ Loaded ${events.length} SOS event(s)`
+      );
+
+    } catch (error) {
+      console.error(
+        "❌ Failed to load SOS event history:",
+        error
+      );
+    }
+  };
+
+  loadEvents();
+}, [user]);
+
+// Listen for nearby SOS notifications in real time
+useEffect(() => {
+  if (!user) {
+    setNearbyNotifications([]);
+    return;
+  }
+
+  console.log("🔔 Starting nearby SOS notification listener...");
+
+  const unsubscribe = listenForNearbySOS(
+    user.uid,
+    (notifications) => {
+      console.log(
+        `🔔 Received ${notifications.length} notification(s)`
+      );
+
+      setNearbyNotifications(notifications);
+      setNotificationError("");
+    },
+    (error) => {
+      console.error("❌ Nearby notification listener failed:", error);
+      setNotificationError("Unable to load nearby SOS notifications.");
+    }
+  );
+
+  return () => {
+    console.log("🔕 Stopping nearby SOS notification listener");
+    unsubscribe();
+  };
+}, [user]);
+
+  // Start motion sensors
+  useEffect(() => {
+    const stopSensors = startMotionSensors({
+      fallDetectionEnabled: fallDetect,
+      onAcceleration: ({magnitude}) => {
+        setSensorAvailable(true);
+        setAccel(magnitude);
+      },
+      onRotation: ({magnitude}) => {
+        setGyro(magnitude);
+      },
+      onFallDetected:(data) => {
+        console.log("🚨 Fall Detected!:", data);
+        setFallDetected(true);
+        setFallWarning(true);
+        setFallCountdown(10);
+
+        setAlerts(prev => [
+          { type: "danger", msg: `Fall detected!. Please confirm you are safe`, time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "FALL" },
+          ...prev
+        ]);
+      },
+      onError: (error) => {
+        console.warn("Error starting motion sensors:", error);
+        setSensorAvailable(false);
+      }
+    });
+
+    return () => {
+      stopSensors();
+    };
+  }, [fallDetect]);
+
+  // Fall countdown logic
+  useEffect(() =>{
+    if(!fallWarning) return;
+
+    if(fallCountdown <= 0){
+      setFallWarning(false);
+
+      console.log("🚨 No response. Triggering automatic Fall SOS.");
+
+      triggerSOS({ type: "FALL", source: "AUTO_FALL" });
+
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setFallCountdown(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [fallCountdown, fallWarning]);
+
 
   // SOS hold logic
   useEffect(() => {
     if (sosHold > 0 && sosHold < 100) {
       holdRef.current = setTimeout(() => setSosHold(h => h + 10), 80);
     } else if (sosHold >= 100) {
-      // setSosActive(true);
       triggerSOS();
       setSosHold(0);
-      // setAlerts(a => [{ type: "danger", msg: "SOS broadcast initiated. Mesh relay active.", time: new Date().toLocaleTimeString(), status: "ACTIVE" }, ...a]);
     }
     return () => clearTimeout(holdRef.current);
   }, [sosHold]);
@@ -99,7 +258,7 @@ function App() {
       await syncUnsyncedSOS(createSOSEvent);
 
       setAlerts(prev => [
-        { type: "info", msg: "Unsynced SOS events synced successfully.", time: new Date().toLocaleTimeString(), status: "SYNCED" },
+        { type: "info", msg: "Unsynced SOS events synced successfully.", time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "SYNCED" },
         ...prev
       ]);
       } catch (error) {
@@ -133,12 +292,74 @@ function App() {
     syncOnStartup();
   }, [user]);
 
-  const cancelSOS = () => {
-    setSosActive(false);
-    setAlerts(a => [{ type: "info", msg: "SOS cancelled by user.", time: new Date().toLocaleTimeString(), status: "CANCELLED" }, ...a]);
-  };
+ const cancelSOS = async () => {
+  try {
+    console.log("🛑 Cancel SOS requested");
 
-  const triggerSOS = async () => {
+    if (!activeSosId) {
+      console.warn("No Firestore SOS ID available");
+
+      setAlerts((prev) => [
+        {
+          type: "warning",
+          msg: navigator.onLine
+            ? "No active SOS event found to cancel."
+            : "This SOS is stored offline and cannot be cancelled on the server yet.",
+          time: new Date().toLocaleTimeString(),
+          status: "WARNING",
+        },
+        ...prev,
+      ]);
+
+      return;
+    }
+
+    // Update the corresponding Firestore document.
+    await cancelSOSEvent(activeSosId);
+
+    console.log("✅ SOS cancelled in Firestore:", activeSosId);
+
+    // Update the local event history immediately.
+    setPersistentEvents((prev) =>
+      prev.map((event) =>
+        event.id === activeSosId
+          ? { ...event, status: "CANCELLED" }
+          : event
+      )
+    );
+
+    setSosActive(false);
+    setActiveSosId(null);
+
+    setAlerts((prev) => [
+      {
+        type: "info",
+        msg: "SOS cancelled. Nearby recipients will be notified.",
+        time: new Date().toLocaleTimeString(),
+        timestamp: new Date().toISOString(),
+        status: "CANCELLED",
+      },
+      ...prev,
+    ]);
+  } catch (error) {
+    console.error("❌ Failed to cancel SOS:", error);
+
+    setAlerts((prev) => [
+      {
+        type: "danger",
+        msg: `Unable to cancel SOS: ${error.message}`,
+        time: new Date().toLocaleTimeString(),
+        status: "FAILED",
+      },
+      ...prev,
+    ]);
+  }
+};
+
+  const triggerSOS = async ({
+  type = "MANUAL",
+  source = "USER"
+} = {}) => {
     if (!user) return;
 
     try{
@@ -148,62 +369,63 @@ function App() {
       const location = await getCurrentLocation();
       console.log("📍 Location:", location);
 
-      const sosData = {
+      await updateUserLocation({
         userId: user.uid,
-        type: "MANUAL",
-        source: "USER",
         latitude: location.latitude,
         longitude: location.longitude,
-        ttl,
+        accuracy: location.accuracy,
+        sharingEnabled: locationSharing
+      });
+
+      const sosData = {
+        userId: user.uid,
+        type,
+        source,
+        latitude: location.latitude,
+        longitude: location.longitude,
         status: "ACTIVE"
       };
 
       // ONLINE: Save SOS to Firestore
 
       if (navigator.onLine) {
+
         console.log("🌐 Online: Saving SOS to Firestore");
+
         const sosEvent = await createSOSEvent(sosData);
+
+        console.log("🔐 Encrypted SOS:", sosEvent);
         console.log("✅ SOS Event Created:", sosEvent.id);
 
-        setAlerts(prev => [
-          { type: "danger", msg: `SOS Activated. Location ${location.available ? "attached" : "unavailable"}.`, time: new Date().toLocaleTimeString(), status: "SENT" },
+        // Save the exact Firestore document ID for cancellation.
+        setActiveSosId(sosEvent.id);
+
+        // Immediately add the new event to persistent events
+        setPersistentEvents(prev => [
+          {
+            id: sosEvent.id,
+            ...sosData,
+            status: "ACTIVE",
+            timestamp: sosData.timestamp || new Date().toISOString()
+          },
           ...prev
         ]);
 
       } else {
+
         // OFFLINE: Save SOS to IndexedDB
+
         console.log("📴 Offline: Saving SOS to IndexedDB");
         const localId = await saveSOSOffline(sosData);
         console.log("💾 SOS Saved Locally with ID:", localId);
         
         setAlerts(prev => [
-          { type: "warn", msg: `SOS Activated offline. Waiting for network connection. Will sync when online.`, time: new Date().toLocaleTimeString(), status: "QUEUED" },
+          { type: "warn", msg: `SOS Activated offline. Waiting for network connection. Will sync when online.`, time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "QUEUED" },
           ...prev
         ]);
       }
-
-      // // Create SOS event in Firestore
-      // const sosEvent = await createSOSEvent({
-      //   userId: user.uid,
-      //   type: "MANUAL",
-      //   source: "USER",
-      //   latitude: location.latitude,
-      //   longitude: location.longitude,
-      //   ttl
-      // });
-
-      // // Check whether location is available
-      // const locationMsg = location.available
-      //   ? "Location attached"
-      //   : "Location unavailable";
-      // setAlerts((prev) => [
-      //   { type: "danger", msg: `SOS Activated. ${locationMsg}`, time: new Date().toLocaleTimeString(), status: "SENT" },
-      //   ...prev
-      // ]);
-
       setSosActive(true);
 
-      // console.log("SOS Event Created:", sosEvent.id);
       
     } catch (error) {
       console.error("Error creating SOS event:", error);
@@ -212,12 +434,27 @@ function App() {
         type: "danger",
         msg: "Failed to create SOS event.",
         time: new Date().toLocaleTimeString(),
+        timestamp: new Date().toISOString(),
         status: "FAILED"
       },
       ...prev
     ]);
     }
   };
+
+  const cancelFallAlert = () => {
+
+    console.log("✅ User confirmed they are safe.");
+
+    setFallDetected(false);
+    setFallWarning(false);
+    setFallCountdown(10);
+
+    setAlerts(prev => [
+      { type: "info", msg: "Fall alert cancelled by user.", time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "CANCELLED" },
+      ...prev
+    ]);
+  }
 
   const tabs = [
     { id: "dashboard", icon: ICONS.home, label: "Dashboard" },
@@ -227,19 +464,6 @@ function App() {
     { id: "log", icon: ICONS.bell, label: "Log" },
     { id: "settings", icon: ICONS.settings, label: "Settings" },
   ];
-
-  const peers = [
-    { name: "R Vivekanand", distance: "12m", relay: true, signal: 4, avatar: "RV" },
-    { name: "Swastik S", distance: "38m", relay: false, signal: 3, avatar: "SS" },
-    { name: "Karthik", distance: "65m", relay: true, signal: 2, avatar: "K" },
-    { name: "Unknown_4F2A", distance: "91m", relay: false, signal: 1, avatar: "??" },
-  ];
-
-  // const contacts = [
-  //   { name: "Contact 1", relation: "Friend", phone: "+91 98450 XXXXX" },
-  //   { name: "Contact 2", relation: "Guardian", phone: "+91 98440 XXXXX" },
-  //   { name: "Emergency SOS", relation: "Campus Security", phone: "080-2323-XXXX" }
-  // ];
 
   // Authentication check
   if (loading) {
@@ -256,6 +480,59 @@ function App() {
 
   return (
     <>
+    {/* Fall Warning Modal */}
+    {fallWarning && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="w-[90%] max-w-md p-6 rounded-2xl bg-zinc-950 border border-red-800 shadow-2xl">
+
+          <div className="text-center">
+
+            <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-red-950 border border-red-700 flex items-center justify-center">
+              <Icon
+                path={ICONS.alert}
+                size={30}
+                className="text-red-400"
+              />
+            </div>
+
+            <h2 className="text-xl font-bold text-red-400">
+              FALL DETECTED
+            </h2>
+
+            <p className="text-sm text-zinc-400 mt-2">
+              Possible fall detected.
+            </p>
+
+            <p className="text-sm text-zinc-500 mt-1">
+              Are you okay?
+            </p>
+
+            <div className="my-6">
+              <p className="text-5xl font-bold text-white">
+                {fallCountdown}
+              </p>
+
+              <p className="text-xs text-zinc-500 mt-2">
+                seconds until emergency SOS
+              </p>
+            </div>
+
+            <button
+              onClick={cancelFallAlert}
+              className="w-full py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition"
+            >
+              I'M OK
+            </button>
+
+            <p className="text-[10px] text-zinc-600 mt-3">
+              If you do not respond, an emergency SOS will be activated automatically.
+            </p>
+
+          </div>
+
+        </div>
+      </div>
+    )}
     <div className="min-h-screen bg-cover bg-center" style={{backgroundImage: `url(${background})`}}>
     <div className="min-h-screen bg-zinc-950 text-zinc-200 font-mono flex flex-col" style={{fontFamily: "'JetBrains Mono', 'Fira Code', monospace"}}>
 
@@ -271,9 +548,8 @@ function App() {
           <button onClick={logOutUser} className="text-xs text-zinc-400 border border-zinc-800 px-3 py-1 rounded-lg hover:bg-zinc-900/40 transition-colors">
             Logout
           </button>
-          <StatusDot active={meshActive} label="BLE" />
+          <StatusDot active={locationSharing} label="ICONS.map" />
           <StatusDot active={sosActive} label={sosActive ? "SOS ACTIVE" : "STANDBY"} />
-          <span className="text-xs text-zinc-600 font-mono">{Math.round(battery)}%</span>
         </div>
       </div>
 
@@ -282,7 +558,7 @@ function App() {
         <div className="mx-4 mt-3 p-3 rounded-xl bg-red-950/60 border border-red-700/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
-            <span className="text-red-300 text-xs font-bold tracking-widest">SOS BROADCASTING · TTL={ttl} · {peerCount} PEERS</span>
+            <span className="text-red-300 text-xs font-bold tracking-widest">· SOS BROADCASTING ·</span>
           </div>
           <button onClick={cancelSOS} className="text-xs text-red-400 border border-red-800 px-3 py-1 rounded-lg hover:bg-red-900/40 transition-colors">
             CANCEL
@@ -302,10 +578,10 @@ function App() {
             setSosHold={setSosHold}
             peerCount={peerCount}
             cancelSOS={cancelSOS}
-            ttl={ttl}
             accel={accel}
             gyro={gyro}
             alerts={alerts}
+            persistentEvents={persistentEvents}
           />
         )}
 
@@ -313,8 +589,7 @@ function App() {
         {tab === "mesh" && (
           <Mesh
             meshActive={meshActive}
-            peers={peers}
-            ttl={ttl}
+            nearbyNotifications={nearbyNotifications}
           />
         )}
 
@@ -323,11 +598,18 @@ function App() {
           <Sensors
             accel={accel}
             gyro={gyro}
-            battery={battery}
             fallDetect={fallDetect}
             setFallDetect={setFallDetect}
             audioDetect={audioDetect}
             setAudioDetect={setAudioDetect}
+            fallDetected={fallDetected}
+            fallWarning={fallWarning}
+            setFallWarning={setFallWarning}
+            fallCountdown={fallCountdown}
+            setFallCountdown={setFallCountdown}
+            cancelFallAlert={cancelFallAlert}
+            impact={impact}
+            setimpact={setimpact}
           />
         )}
 
@@ -343,16 +625,15 @@ function App() {
         {tab === "log" && (
           <EventLog
             alerts={alerts}
+            persistentEvents={persistentEvents}
           />
         )}
 
         {/* SETTINGS TAB */}
         {tab === "settings" && (
           <Settings
-            meshActive={meshActive}
-            setMeshActive={setMeshActive}
-            ttl={ttl}
-            setTtl={setTtl}
+            locationSharing={locationSharing}
+            setLocationSharing={setLocationSharing}
           />
         )}
       </div>
@@ -373,6 +654,7 @@ function App() {
 
   );
 }
+
 
 
 

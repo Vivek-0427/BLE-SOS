@@ -1,3 +1,5 @@
+// Nearby Service for managing user location and nearby SOS notifications.
+
 import {
   doc,
   setDoc,

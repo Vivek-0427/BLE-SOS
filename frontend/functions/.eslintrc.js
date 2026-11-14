@@ -1,3 +1,5 @@
+// ESLint configuration for Firebase Cloud Functions
+
 /* global module */
 
 module.exports = {

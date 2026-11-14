@@ -1,3 +1,5 @@
+// Settings page
+
 import Icon from "../components/Icon";
 import ICONS from "../data/constants";
 
@@ -33,14 +35,6 @@ export default function Settings({ locationSharing, setLocationSharing }) {
                 <Icon path={ICONS.eye} size={14} className="text-zinc-600" />
                 <span>Location sharing: GPS if available</span>
               </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-600 space-y-1">
-              <p className="text-zinc-400 font-bold mb-2">About</p>
-              <p>Decentralized Bluetooth Mesh SOS System</p>
-              <p>Dr. AIT — ISE Dept · Batch 2023–27</p>
-              <p>Guide: Neetha Natesh</p>
-              <p className="text-zinc-700 pt-1">v1.0.0 · Built on Android Sensors + Network Mesh</p>
             </div>
           </>
     )

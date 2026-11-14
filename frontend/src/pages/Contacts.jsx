@@ -1,115 +1,4 @@
-// import ContactCard from "../components/ContactCard"
-// import Icon from "../components/Icon"
-// import ICONS from "../data/constants"
-// import { useState, useEffect } from "react";
-
-// import { getContacts, addContact, deleteContact } from "../services/contactService";
-
-// export default function Contacts({ contacts, sosActive }) {
-
-//   const [contacts, setContacts] = useState([]);
-//   const [loading, setLoading] = useState(true);
-//   const [showForm, setShowForm] = useState(false);
-
-//   const [formData, setFormData] = useState({
-//     name: "",
-//     relation: "",
-//     phone: "",
-//     email: "",
-//   });
-
-//   const [error, setError] = useState("");
-
-//   // Load contacts for the current user
-//   useEffect(() => {
-//     const loadContacts = async () => {
-//       if (!user) return; // Ensure user is available
-//       try {
-//         setLoading(true);
-//         const userContacts = await getContacts(user.uid);
-//         setContacts(userContacts);
-//       } catch (error) {
-//         console.error("Error loading contacts:", error);
-//       } finally {
-//         setLoading(false);
-//       }
-//     };
-
-//     loadContacts();
-//   }, [user]);
-
-//   // Handle form input changes
-//   const handleInputChange = (e) => {
-
-//     setFormData({
-//       ...formData,
-//       [e.target.name]: e.target.value,
-//     });
-//   }
-
-//   // Add a new contact
-//   const handleAddContact = async (e) => {
-//     e.preventDefault();
-//     if (!formData.name || !formData.phone) {
-//       setError("Name and phone number are required.");
-//       return;
-//     }
-//     try {
-//       setError("");
-//       const newContactId = await addContact(user.uid, formData);
-//       setContacts([...contacts, { id: newContactId, ...formData }]);
-//       setFormData({ name: "", relation: "", phone: "", email: "" });
-//       setShowForm(false);
-//     } catch (error) {
-//       console.error("Error adding contact:", error);
-//       setError("Failed to add contact. Please try again.");
-//     }
-//   };
-
-//   // Delete a contact
-//   const handleDeleteContact = async (contactId) => {
-//     try {
-//       await deleteContact(user.uid, contactId);
-//       setContacts(contacts.filter((contact) => contact.id !== contactId));
-//     } catch (error) {
-//       console.error("Error deleting contact:", error);
-//       setError("Failed to delete contact. Please try again.");
-//     }
-//   };
-
-//   if (loading) {
-//     return <div className="text-center text-zinc-500">Loading contacts...</div>;
-//   }
-
-//     return (
-//         <>
-//             <div className="flex items-center justify-between">
-//               <p className="text-[10px] text-zinc-600 tracking-widest uppercase">Emergency Contacts</p>
-//               <button className="flex items-center gap-1 text-xs text-cyan-400 border border-cyan-900/50 px-2 py-1 rounded-lg hover:bg-cyan-950/30">
-//                 <Icon path={ICONS.plus} size={12} /> Add
-//               </button>
-//             </div>
-//             <div className="space-y-2">
-//               <ContactCard name="Contact 1" relation="Friend" phone="+91 98450 XXXXX" notified={sosActive} />
-//               <ContactCard name="Contact 2" relation="Guardian" phone="+91 98440 XXXXX" notified={false} />
-//               <ContactCard name="Emergency SOS" relation="Campus Security" phone="080-2323-XXXX" notified={sosActive} />
-//             </div>
-
-//             <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
-//               <p className="text-[10px] text-zinc-600 mb-3 tracking-widest uppercase">Escalation Flow</p>
-//               <div className="space-y-2 text-xs">
-//                 {["SOS triggered on device", "BLE broadcast to mesh peers", "Relay via internet-connected peer", "SMS + Push to emergency contacts", "Dashboard notification logged"].map((step, i) => (
-//                   <div key={i} className="flex items-center gap-3">
-//                     <span className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 shrink-0">{i+1}</span>
-//                     <span className="text-zinc-400">{step}</span>
-//                   </div>
-//                 ))}
-//               </div>
-//             </div>
-//           </>
-//     );
-// }
-
+// CONTACTS PAGE
 
 import ContactCard from "../components/ContactCard";
 import Icon from "../components/Icon";
@@ -342,12 +231,12 @@ export default function Contacts({ user, sosActive }) {
           className="flex items-center gap-1 text-xs text-cyan-400 border border-cyan-900/50 px-2 py-1 rounded-lg hover:bg-cyan-950/30"
         >
 
-          <Icon
+          {/* <Icon
             path={ICONS.plus}
             size={12}
-          />
+          /> */}
 
-          {showForm ? "Cancel" : "Add"}
+          {showForm ? "- Cancel" : "+ Add"}
 
         </button>
 

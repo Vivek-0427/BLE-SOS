@@ -1,6 +1,5 @@
 import './App.css'
 import { useState, useEffect, useRef } from "react";
-// import { auth, db } from './services/firebase.js';
 
 // Components
 import Icon from './components/Icon.jsx';
@@ -15,9 +14,12 @@ import Settings from './pages/Settings.jsx';
 import Contacts from './pages/Contacts.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import About from "./pages/About.jsx";
 
 // Data
 import ICONS from './data/constants.jsx';
+import { db } from "./services/firebase.js";
+import { doc,onSnapshot } from "firebase/firestore";
 
 // Hooks
 import useAuth from './hooks/useAuth.js';
@@ -28,9 +30,9 @@ import { createSOSEvent, getUserSOSEvents, cancelSOSEvent } from './services/sos
 import { getCurrentLocation } from './services/locationService.js';
 import { saveSOSOffline, syncUnsyncedSOS } from './services/offlineService.js';
 import { startMotionSensors } from './services/sensorsService.js';
-import { generateMeshPeers } from "./services/meshSimulationService";
 import { updateUserLocation, startLocationTracking, stopLocationTracking } from './services/nearbyService.js';
 import { listenForNearbySOS } from "./services/nearbyService";
+import { startScreamDetection } from './services/audioDetectionService.js';
 
 // Assets
 import background from "./assets/background.jpg";
@@ -38,12 +40,14 @@ import background from "./assets/background.jpg";
 
 function App() {
 
-  // console.log("Firebase Auth:", auth);
-  // console.log("Firebase Firestore:", db);
-
   const { user, loading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
-  const [peers, setPeers] = useState([]);
+  // const [peers, setPeers] = useState([]);
+  const [audioStatus, setAudioStatus] = useState("OFF");
+  const [warningSource, setWarningSource] = useState(null);
+
+  const warningActiveRef = useRef(false);
+  const warningSourceRef = useRef(null);
 
 // ── Main App ──────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState("dashboard");
@@ -70,7 +74,31 @@ function App() {
   const [fallCountdown, setFallCountdown] = useState(10);
   const [fallWarning, setFallWarning] = useState(false);
   const [sensorAvailable, setSensorAvailable] = useState(false);
-  const [peerCount, setPeerCount] = useState(4);
+  const [peerCount, setPeerCount] = useState(0);
+
+  // Listen for the current active SOS peer count
+  useEffect(() => {
+  if (!user || !activeSosId || !sosActive) {
+    setPeerCount(0);
+    return;
+  }
+
+  const sosRef = doc(db, "sosEvents", activeSosId);
+
+  const unsubscribe = onSnapshot(sosRef, (snapshot) => {
+    if (
+      snapshot.exists() &&
+      snapshot.data().status === "ACTIVE" &&
+      snapshot.data().userId === user.uid
+    ) {
+      setPeerCount(snapshot.data().peersReached || 0);
+    } else {
+      setPeerCount(0);
+    }
+  });
+
+  return () => unsubscribe();
+  }, [user, activeSosId, sosActive]);
 
   // Start location tracking when user is logged in
 
@@ -88,39 +116,8 @@ function App() {
 
 }, [user, locationSharing]);
 
-  // Generate mesh peers on app initialization
-  useEffect(() => {
-    const initialPeers = generateMeshPeers();
-
-     console.log("Initial mesh peers generated:", initialPeers);
-
-     setPeers(initialPeers);
-  }, []);
-
-  useEffect(() => {
-  if (!meshActive) return;
-
-  const interval = setInterval(() => {
-
-    setPeers(prev =>
-      prev.map(peer => ({
-        ...peer,
-        signal: Math.max(
-          1,
-          Math.min(
-            4,
-            peer.signal + Math.floor(Math.random() * 3 - 1)
-          )
-        )
-      }))
-    );
-
-  }, 3000);
-
-  return () => clearInterval(interval);
-}, [meshActive]);
-
-  // Load Events from Firestore on user login
+  
+// Load Events from Firestore on user login
 
   useEffect(() => {
   if (!user) return;
@@ -149,6 +146,7 @@ function App() {
 }, [user]);
 
 // Listen for nearby SOS notifications in real time
+
 useEffect(() => {
   if (!user) {
     setNearbyNotifications([]);
@@ -179,7 +177,8 @@ useEffect(() => {
   };
 }, [user]);
 
-  // Start motion sensors
+// Start motion sensors
+
   useEffect(() => {
     const stopSensors = startMotionSensors({
       fallDetectionEnabled: fallDetect,
@@ -190,15 +189,29 @@ useEffect(() => {
       onRotation: ({magnitude}) => {
         setGyro(magnitude);
       },
-      onFallDetected:(data) => {
-        console.log("🚨 Fall Detected!:", data);
+      onFallDetected: (data) => {
+        console.log("Fall detected:", data);
+
+        // Avoid restarting an existing warning countdown.
+        if (warningActiveRef.current) return;
+
+        warningActiveRef.current = true;
+        warningSourceRef.current = "FALL";
+
+        setWarningSource("FALL");
         setFallDetected(true);
         setFallWarning(true);
         setFallCountdown(10);
 
-        setAlerts(prev => [
-          { type: "danger", msg: `Fall detected!. Please confirm you are safe`, time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "FALL" },
-          ...prev
+        setAlerts((prev) => [
+          {
+            type: "danger",
+            msg: "Possible fall detected. Please confirm you are safe.",
+            time: new Date().toLocaleTimeString(),
+            timestamp: new Date().toISOString(),
+            status: "FALL",
+          },
+          ...prev,
         ]);
       },
       onError: (error) => {
@@ -212,29 +225,134 @@ useEffect(() => {
     };
   }, [fallDetect]);
 
-  // Fall countdown logic
-  useEffect(() =>{
-    if(!fallWarning) return;
+  useEffect(() => {
+  if (!audioDetect) {
+    setAudioStatus("OFF");
+    return;
+  }
 
-    if(fallCountdown <= 0){
-      setFallWarning(false);
+  let cancelled = false;
+  let stopDetection;
 
-      console.log("🚨 No response. Triggering automatic Fall SOS.");
+  const startDetection = async () => {
+    try {
+      setAudioStatus("REQUESTING PERMISSION");
 
-      triggerSOS({ type: "FALL", source: "AUTO_FALL" });
+      const cleanup = await startScreamDetection({
+        onScreamDetected: (data) => {
+          if (cancelled) return;
 
-      return;
+          console.log("High scream detected:", data);
+
+          // Don't replace an existing fall or scream warning.
+          if (warningActiveRef.current) return;
+
+          warningActiveRef.current = true;
+          warningSourceRef.current = "SCREAM";
+
+          setWarningSource("SCREAM");
+          setAudioStatus("SCREAM DETECTED");
+          setFallWarning(true);
+          setFallCountdown(10);
+
+          setAlerts((prev) => [
+            {
+              type: "danger",
+              msg: "High scream detected! Please confirm you are safe.",
+              time: new Date().toLocaleTimeString(),
+              timestamp: new Date().toISOString(),
+              status: "SCREAM",
+            },
+            ...prev,
+          ]);
+        },
+
+        onError: (error) => {
+          if (!cancelled) {
+            console.error(
+              "Unable to detect screams:",
+              error
+            );
+
+            setAudioStatus("ERROR");
+          }
+        },
+      });
+
+      if (cancelled) {
+        cleanup?.();
+      } else {
+        stopDetection = cleanup;
+
+        setAudioStatus("LISTENING");
+      }
+    } catch (error) {
+      if (!cancelled) {
+        console.error(error);
+        setAudioStatus("ERROR");
+      }
+    }
+  };
+
+  startDetection();
+
+  return () => {
+    cancelled = true;
+    stopDetection?.();
+  };
+}, [audioDetect]);
+
+
+// Shared fall/scream countdown logic
+
+useEffect(() => {
+  if (!fallWarning) return;
+
+  if (fallCountdown <= 0) {
+    const source = warningSourceRef.current;
+
+    // Close the warning before triggering SOS.
+    setFallWarning(false);
+    setFallCountdown(10);
+
+    warningActiveRef.current = false;
+    warningSourceRef.current = null;
+
+    setWarningSource(null);
+
+    if (source === "SCREAM") {
+      console.log(
+        "No response to scream warning. Triggering SOS."
+      );
+
+      triggerSOS({
+        type: "SCREAM",
+        source: "AUTO_SCREAM",
+      });
+    } else if (source === "FALL") {
+      console.log(
+        "No response to fall warning. Triggering SOS."
+      );
+
+      triggerSOS({
+        type: "FALL",
+        source: "AUTO_FALL",
+      });
     }
 
-    const timer = setTimeout(() => {
-      setFallCountdown(prev => prev - 1);
-    }, 1000);
+    return;
+  }
 
-    return () => clearTimeout(timer);
-  }, [fallCountdown, fallWarning]);
+  const timer = setTimeout(() => {
+    setFallCountdown((prev) => prev - 1);
+  }, 1000);
+
+  return () => clearTimeout(timer);
+}, [fallCountdown, fallWarning]);
 
 
-  // SOS hold logic
+// SOS hold logic
+
   useEffect(() => {
     if (sosHold > 0 && sosHold < 100) {
       holdRef.current = setTimeout(() => setSosHold(h => h + 10), 80);
@@ -245,7 +363,8 @@ useEffect(() => {
     return () => clearTimeout(holdRef.current);
   }, [sosHold]);
 
-  // Automatically sync unsynced SOS events when online
+// Automatically sync unsynced SOS events when online
+
   useEffect(() => {
     const handleOnline = async () => {
       console.log("🌐 Network connection restored. Attempting to sync unsynced SOS events...");
@@ -273,7 +392,8 @@ useEffect(() => {
     };
   }, [user]);
 
-  // Startup UseEffect to sync unsynced SOS events if online
+// Startup UseEffect to sync unsynced SOS events if online
+
   useEffect(() => {
     if(!user) return;
     const syncOnStartup = async () => {
@@ -314,7 +434,8 @@ useEffect(() => {
       return;
     }
 
-    // Update the corresponding Firestore document.
+// Update the corresponding Firestore document.
+
     await cancelSOSEvent(activeSosId);
 
     console.log("✅ SOS cancelled in Firestore:", activeSosId);
@@ -356,6 +477,58 @@ useEffect(() => {
   }
 };
 
+// Handle user logout
+
+const handleLogout = async () => {
+  try {
+    // Cancel active SOS before logging out
+    if (sosActive) {
+      if (!activeSosId) {
+        alert("Unable to log out safely: the active SOS could not be cancelled.");
+        return;
+      }
+
+      await cancelSOSEvent(activeSosId);
+
+      setPersistentEvents((prev) =>
+        prev.map((event) =>
+          event.id === activeSosId
+            ? { ...event, status: "CANCELLED" }
+            : event
+        )
+      );
+
+      setSosActive(false);
+      setActiveSosId(null);
+
+      setAlerts((prev) => [
+        {
+          type: "info",
+          msg: "SOS cancelled before logout. Nearby recipients will be notified.",
+          time: new Date().toLocaleTimeString(),
+          timestamp: new Date().toISOString(),
+          status: "CANCELLED",
+        },
+        ...prev,
+      ]);
+    }
+
+    // Reset fall alert states
+    setFallWarning(false);
+    setFallCountdown(10);
+    setFallDetected(false);
+    setSosHold(0);
+
+    // Log out from Firebase Authentication
+    await logOutUser();
+  } catch (error) {
+    console.error("Error during logout:", error);
+    alert("Logout failed. Please try again.");
+  }
+};
+
+// Trigger an SOS event
+
   const triggerSOS = async ({
   type = "MANUAL",
   source = "USER"
@@ -383,7 +556,8 @@ useEffect(() => {
         source,
         latitude: location.latitude,
         longitude: location.longitude,
-        status: "ACTIVE"
+        status: "ACTIVE",
+        peersReached: 0
       };
 
       // ONLINE: Save SOS to Firestore
@@ -442,30 +616,51 @@ useEffect(() => {
     }
   };
 
-  const cancelFallAlert = () => {
+// Cancel a fall alert
 
-    console.log("✅ User confirmed they are safe.");
+  const cancelFallAlert = () => {
+    const source = warningSourceRef.current;
+
+    console.log("User confirmed they are safe.");
 
     setFallDetected(false);
     setFallWarning(false);
     setFallCountdown(10);
+    setScreamWarning?.(false);
 
-    setAlerts(prev => [
-      { type: "info", msg: "Fall alert cancelled by user.", time: new Date().toLocaleTimeString(), timestamp: new Date().toISOString(), status: "CANCELLED" },
-      ...prev
+    setAlerts((prev) => [
+      {
+        type: "info",
+        msg:
+          source === "SCREAM"
+            ? "Scream warning cancelled by user."
+            : "Fall warning cancelled by user.",
+        time: new Date().toLocaleTimeString(),
+        timestamp: new Date().toISOString(),
+        status: "CANCELLED",
+      },
+      ...prev,
     ]);
-  }
+
+    warningActiveRef.current = false;
+    warningSourceRef.current = null;
+
+    setWarningSource(null);
+  };
+
+// Define the navigation tabs
 
   const tabs = [
     { id: "dashboard", icon: ICONS.home, label: "Dashboard" },
-    { id: "mesh", icon: ICONS.bluetooth, label: "Mesh" },
+    { id: "mesh", icon: ICONS.map, label: "Mesh" },
     { id: "sensors", icon: ICONS.activity, label: "Sensors" },
     { id: "contacts", icon: ICONS.users, label: "Contacts" },
     { id: "log", icon: ICONS.bell, label: "Log" },
     { id: "settings", icon: ICONS.settings, label: "Settings" },
+    { id: "about", icon: ICONS.shield, label: "About" }
   ];
 
-  // Authentication check
+// Authentication check
   if (loading) {
     return <div className="text-center text-zinc-500">Loading...</div>;
   }
@@ -496,11 +691,15 @@ useEffect(() => {
             </div>
 
             <h2 className="text-xl font-bold text-red-400">
-              FALL DETECTED
+              {warningSource === "SCREAM"
+                ? "HIGH SCREAM DETECTED"
+                : "FALL DETECTED"}
             </h2>
 
             <p className="text-sm text-zinc-400 mt-2">
-              Possible fall detected.
+              {warningSource === "SCREAM"
+                ? "A possible high scream has been detected."
+                : "A possible fall has been detected."}
             </p>
 
             <p className="text-sm text-zinc-500 mt-1">
@@ -545,10 +744,11 @@ useEffect(() => {
           <span className="text-sm font-bold text-zinc-200 tracking-tight">MESH<span className="text-red-400">SOS</span></span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={logOutUser} className="text-xs text-zinc-400 border border-zinc-800 px-3 py-1 rounded-lg hover:bg-zinc-900/40 transition-colors">
+          <button onClick={handleLogout} className="text-xs text-zinc-400 border border-zinc-800 px-3 py-1 rounded-lg hover:bg-zinc-900/40 transition-colors">
             Logout
           </button>
-          <StatusDot active={locationSharing} label="ICONS.map" />
+          <StatusDot active={locationSharing}/>
+          <Icon path={ICONS.map} size={20} className="text-red-400" />
           <StatusDot active={sosActive} label={sosActive ? "SOS ACTIVE" : "STANDBY"} />
         </div>
       </div>
@@ -602,6 +802,7 @@ useEffect(() => {
             setFallDetect={setFallDetect}
             audioDetect={audioDetect}
             setAudioDetect={setAudioDetect}
+            audioStatus={audioStatus}
             fallDetected={fallDetected}
             fallWarning={fallWarning}
             setFallWarning={setFallWarning}
@@ -636,10 +837,15 @@ useEffect(() => {
             setLocationSharing={setLocationSharing}
           />
         )}
+
+        {/* ABOUT TAB */}
+        {tab === "about" && (
+          <About user={user} />
+        )}
       </div>
 
       {/* Bottom Nav */}
-      <div className="border-t border-zinc-900 bg-zinc-950 px-2 py-2 grid grid-cols-6 gap-1">
+      <div className="border-t border-zinc-900 bg-zinc-950 px-1 py-2 grid grid-cols-7 gap-0.5">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl transition-colors ${tab === t.id ? "bg-zinc-900 text-cyan-400" : "text-zinc-600 hover:text-zinc-400"}`}>
@@ -654,8 +860,5 @@ useEffect(() => {
 
   );
 }
-
-
-
 
 export default App

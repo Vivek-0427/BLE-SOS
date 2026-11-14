@@ -1,3 +1,5 @@
+// REGISTER PAGE
+
 import { useState } from "react";
 import { registerUser } from "../services/authService.js";
 import {  Eye, EyeOff } from "lucide-react";

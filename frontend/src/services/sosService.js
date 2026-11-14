@@ -1,3 +1,5 @@
+// SOS Service for managing SOS events in Firebase Firestore. It provides functions to create, retrieve, and cancel SOS events, with encryption for sensitive data.
+
 import{
     doc,
     updateDoc,

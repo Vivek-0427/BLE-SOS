@@ -1,3 +1,5 @@
+// Firebase Cloud Functions for SOS App
+
 /* global require, exports */
 /* eslint-disable no-undef */
 
@@ -138,20 +140,35 @@ exports.detectNearbySOS = onDocumentCreated(
           .collection("items")
           .doc(sosId);
 
-        notificationWrites.push(
-          notificationRef.set({
-            type: "NEARBY_SOS",
-            sosId,
-            message: "Someone nearby needs emergency help.",
-            distanceMeters: Math.round(distance),
-            status: "UNREAD",
-            createdAt: FieldValue.serverTimestamp()
-          }, { merge: true })
-        );
+        notificationWrites.push(notificationRef.set({
+          type: "NEARBY_SOS",
+          sosId,
+
+          message: "Someone nearby needs emergency help.",
+
+          // Distance between the helper and the person in danger
+          distanceMeters: Math.round(distance),
+
+          // Destination coordinates for Google Maps
+          destinationLatitude: sender.latitude,
+          destinationLongitude: sender.longitude,
+
+          status: "UNREAD",
+
+          createdAt: FieldValue.serverTimestamp()
+        }, { merge: true }));
       }
     }
 
     await Promise.all(notificationWrites);
+
+    // Update the actual number of successfully notified helpers
+    await db
+      .collection("sosEvents")
+      .doc(sosId)
+      .update({
+        peersReached: notificationWrites.length
+      });
 
     console.log(
       `✅ Nearby SOS processing complete. ` +
@@ -160,14 +177,22 @@ exports.detectNearbySOS = onDocumentCreated(
   }
 );
 
-// Update notifications when an SOS is cancelled
+// Update helper notifications when an SOS is cancelled
 exports.handleSOSCancellation = onDocumentUpdated(
-  "sosEvents/{sosId}",
+  {
+    document: "sosEvents/{sosId}",
+    region: "asia-south1"
+  },
   async (event) => {
-    const before = event.data.before.data();
-    const after = event.data.after.data();
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
 
-    // Process only a transition from ACTIVE to CANCELLED
+    if (!before || !after) {
+      console.log("Missing SOS document data.");
+      return;
+    }
+
+    // Process only ACTIVE -> CANCELLED
     if (
       before.status !== "ACTIVE" ||
       after.status !== "CANCELLED"
@@ -177,49 +202,54 @@ exports.handleSOSCancellation = onDocumentUpdated(
 
     const sosId = event.params.sosId;
 
-    console.log("🚨 SOS cancelled:", sosId);
+    console.log("Processing SOS cancellation:", sosId);
 
-    const notificationsSnapshot = await db
-      .collection("notifications")
-      .get();
+    try {
+      // Search all items subcollections for this SOS ID.
+      const notificationsSnapshot = await db
+        .collectionGroup("items")
+        .where("sosId", "==", sosId)
+        .get();
 
-    const updates = [];
+      let updatedCount = 0;
 
-    for (const recipientDoc of notificationsSnapshot.docs) {
-      const notificationRef = recipientDoc.ref
-        .collection("items")
-        .doc(sosId);
+      for (const notificationDoc of notificationsSnapshot.docs) {
+        const notification = notificationDoc.data();
 
-      const notificationSnapshot = await notificationRef.get();
+        if (notification.type !== "NEARBY_SOS") {
+          continue;
+        }
 
-      if (!notificationSnapshot.exists) {
-        continue;
+        await notificationDoc.ref.update({
+          message: "The person has cancelled the SOS. They are safe.",
+          status: "CANCELLED",
+          cancelledAt: FieldValue.serverTimestamp()
+        });
+
+        updatedCount++;
+
+        console.log("Updated helper notification:", {
+          notificationPath: notificationDoc.ref.path,
+          sosId
+        });
       }
 
-      const notification = notificationSnapshot.data();
-
-      // Update only recipients who received this SOS
-      if (notification.type !== "NEARBY_SOS") {
-        continue;
-      }
-
-      updates.push(
-        notificationRef.set(
-          {
-            type: "SOS_CANCELLED",
-            message: "The nearby emergency alert has been cancelled.",
-            status: "CANCELLED",
-            cancelledAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        )
+      console.log(
+        `SOS cancellation complete. Updated ${updatedCount} notification(s).`
       );
+
+      if (updatedCount === 0) {
+        console.warn(
+          "No notification found with sosId:",
+          sosId
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to update SOS cancellation notifications:",
+        error
+      );
+      throw error;
     }
-
-    await Promise.all(updates);
-
-    console.log(
-      `✅ Updated ${updates.length} SOS cancellation notification(s)`
-    );
   }
 );

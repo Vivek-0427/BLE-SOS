@@ -1,3 +1,5 @@
+// Offline Service for managing SOS data when the user is offline. It uses IndexedDB to store unsynced SOS events and syncs them to Firebase when the user is back online.
+
 const DB_NAME= 'sosSystemDB';
 const STORE_NAME= 'sosQueue';
 const DB_VERSION= 1;

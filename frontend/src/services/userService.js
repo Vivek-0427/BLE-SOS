@@ -1,3 +1,5 @@
+// User Service for managing user profiles in Firebase Firestore. It provides functions to create and retrieve user profiles, including default role assignment and timestamping.
+
 import { doc,setDoc,getDoc,serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
 

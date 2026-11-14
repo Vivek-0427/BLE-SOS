@@ -1,8 +1,10 @@
+// SENSORS PAGE
+
 import SensorGauge from "../components/SensorGauge";
 import Icon from "../components/Icon";
 import ICONS from "../data/constants";
 
-export default function Sensors({ accel, gyro, fallDetect, setFallDetect, audioDetect, setAudioDetect, fallDetected, impact, setimpact }) {
+export default function Sensors({ accel, gyro, fallDetect, setFallDetect, audioDetect, setAudioDetect, fallDetected, audioStatus }) {
   return (
     <>
             <div className="space-y-2">
@@ -26,16 +28,6 @@ export default function Sensors({ accel, gyro, fallDetect, setFallDetect, audioD
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-200">Sudden Impact</p>
-                  <p className="text-[10px] text-zinc-600">High accel burst detect</p>
-                </div>
-                <button onClick={() => setimpact(v => !v)} className={`w-11 h-6 rounded-full transition-colors relative ${impact ? "bg-cyan-600" : "bg-zinc-700"}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${impact ? "translate-x-0" : "-translate-x-5"}`} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
                   <p className="text-sm text-zinc-200">Audio / Scream Detect</p>
                   <p className="text-[10px] text-zinc-600">Microphone classification</p>
                 </div>
@@ -44,6 +36,42 @@ export default function Sensors({ accel, gyro, fallDetect, setFallDetect, audioD
                 </button>
               </div>
             </div>
+
+            {audioDetect && (
+              <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-zinc-300">
+                    Scream Detection
+                  </span>
+
+                  <span
+                    className={`text-xs font-bold ${
+                      audioStatus === "LISTENING"
+                        ? "text-green-400"
+                        : audioStatus === "SCREAM DETECTED"
+                        ? "text-red-400"
+                        : audioStatus === "ERROR"
+                        ? "text-red-400"
+                        : "text-yellow-400"
+                    }`}
+                  >
+                    {audioStatus}
+                  </span>
+                </div>
+
+                {audioStatus === "SCREAM DETECTED" && (
+                  <div className="mt-3 rounded-lg border border-red-600 bg-red-950/50 p-3">
+                    <p className="font-bold text-red-400">
+                      ⚠️ HIGH SCREAM DETECTED
+                    </p>
+
+                    <p className="mt-1 text-sm text-red-200">
+                      Emergency confirmation countdown started.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {fallDetected && (
               <div className="p-3 rounded-xl bg-red-950/40 border border-red-800">
@@ -75,7 +103,7 @@ export default function Sensors({ accel, gyro, fallDetect, setFallDetect, audioD
                 <Icon path={ICONS.alert} size={13} className="text-amber-400" />
                 <span className="text-xs text-amber-300 font-bold">Detection Thresholds</span>
               </div>
-              <p className="text-[11px] text-amber-600">Fall: accel &gt; 14 m/s² + post-impact stillness · Impact: burst &gt; 18 m/s² · Audio: &gt; 0.82 confidence</p>
+              <p className="text-[11px] text-amber-600">Fall: accel &gt; 18 m/s² + post-impact stillness ·  Audio: &gt; 0.10 confidence</p>
             </div>
           </>
         );

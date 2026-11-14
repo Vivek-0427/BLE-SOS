@@ -1,3 +1,5 @@
+// Contact Service for managing emergency contacts.
+
 import {
     collection,
     addDoc,

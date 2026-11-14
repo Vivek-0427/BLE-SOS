@@ -1,3 +1,5 @@
+// Peer Card component for displaying emergency notifications from nearby peers
+
 const PeerCard = ({ notification }) => {
   const {
     message = "Someone nearby needs emergency help.",

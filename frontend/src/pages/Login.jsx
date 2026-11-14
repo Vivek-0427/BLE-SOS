@@ -1,3 +1,5 @@
+// LOGIN PAGE
+
 import { useState } from "react";
 import { logInUser } from "../services/authService.js";
 import background from "../assets/background.jpg";

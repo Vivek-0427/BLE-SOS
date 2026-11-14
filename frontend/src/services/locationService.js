@@ -1,3 +1,5 @@
+// Location Service for getting the user's current location.
+
 export const getCurrentLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) {

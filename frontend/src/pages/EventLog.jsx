@@ -1,3 +1,5 @@
+// EVENT LOG PAGE
+
 import AlertItem from "../components/AlertItem";
 
 export default function EventLog({

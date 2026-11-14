@@ -1,3 +1,5 @@
+// Crypto Service for handling encryption and decryption of SOS data.
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 

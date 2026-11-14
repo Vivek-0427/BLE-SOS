@@ -1,3 +1,5 @@
+// Authentication service for managing user authentication with Firebase.
+
 import{
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,

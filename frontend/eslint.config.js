@@ -1,3 +1,5 @@
+// ESLint configuration for the frontend project. It sets up rules and plugins for JavaScript and React development, including support for React Hooks and Vite's React Refresh plugin.
+
 import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'

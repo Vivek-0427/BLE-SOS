@@ -1,3 +1,5 @@
+// A custom React hook to manage user authentication state using Firebase Authentication.
+
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 
@@ -25,7 +27,6 @@ const useAuth = () => {
 export default useAuth;
 
 // This hook tells your React application:
-
 // Is the user logged in?
 // Who is the user?
 // Is Firebase still checking?

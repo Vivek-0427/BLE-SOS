@@ -1,3 +1,5 @@
+// DASHBOARD PAGE
+
 import SensorGauge from "../components/SensorGauge"
 import AlertItem from "../components/AlertItem"
 import Icon from "../components/Icon"
@@ -39,7 +41,7 @@ export default function Dashboard({ sosActive, sosHold, setSosHold, cancelSOS, p
             <div className="grid grid-cols-2 gap-2">
               <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center">
                 <p className="text-[10px] text-zinc-600 mb-1">PEERS</p>
-                <p className="text-xl font-bold text-cyan-400">{peerCount}</p>
+                <p className="text-xl font-bold text-cyan-400">{sosActive ? peerCount : 0}</p>
               </div>
               <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center">
                 <p className="text-[10px] text-zinc-600 mb-1">RANGE</p>

@@ -1,3 +1,5 @@
+// Icon definitions for the application in SVG path format
+
 const ICONS = {
   sos: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z",
   bluetooth: "M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11",
